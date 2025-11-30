@@ -110,10 +110,6 @@ jobs:
         aws-region: ${{ vars.AWS_REGION }}
         role-session-name: GitHubActions-Build-Scan-${{ github.run_id }}
 
-    - name: Login ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v2
-
     # ────────────── BUILD & SCAN IMAGE ──────────────
     - name: Build Docker Image
       env:
@@ -133,7 +129,7 @@ jobs:
     - name: Trivy Image Scan (Pre-Push)
       uses: aquasecurity/trivy-action@master
       with:
-        image-ref: '${{ env.IMAGE_URI }}'
+        image-ref: 'api-python-app:${{ env.IMAGE_TAG }}'
         format: 'sarif'
         output: 'trivy-image-results.sarif'
         severity: 'CRITICAL'
@@ -146,6 +142,10 @@ jobs:
       uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: 'trivy-image-results.sarif'
+
+    - name: Login ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
 
     - name: Push Image Segura a ECR
       run: |
