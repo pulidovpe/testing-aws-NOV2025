@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "check": "CKV_AWS_24",
+      "check_name": "Ensure VPC flow logging is enabled",
+      "reason": "PoC: Flow logs disabled para costos"
+    },
+    {
+      "check": "CKV_AWS_21",
+      "check_name": "Ensure all data stored in the S3 bucket have versioning enabled",
+      "reason": "PoC: No S3 buckets"
+    }
+  ]
+}
