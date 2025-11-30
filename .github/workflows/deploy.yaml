@@ -87,7 +87,7 @@ jobs:
   build-and-scan:
     environment: dev
     runs-on: ubuntu-latest
-    needs: security-scan  # Solo si pasa scans
+    needs: security-scan
     permissions:
       id-token: write
       contents: read
@@ -97,36 +97,37 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Clonar App Python MySQL
+    - name: 🔄 Clonar App Python MySQL
       run: |
-        echo "Clonando https://github.com/pulidovpe/api-python-mysql"
+        echo "📦 Clonando app-src..."
         git clone --depth 1 https://github.com/pulidovpe/api-python-mysql.git app-src
         ls -la app-src/
+        cd app-src && ls -la
 
-    - name: Configurar AWS OIDC
+    - name: 🔐 Configurar AWS OIDC
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: ${{ secrets.AWS_ROLE }}
+        role-to-assume: ${{ vars.AWS_ROLE }}
         aws-region: ${{ vars.AWS_REGION }}
-        role-session-name: GitHubActions-Build-Scan-${{ github.run_id }}
+        role-session-name: GitHubActions-Build-${{ github.run_id }}
 
-    # ────────────── BUILD & SCAN IMAGE ──────────────
-    - name: Build Docker Image
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY_NAME }}
-        IMAGE_TAG: ${{ env.IMAGE_TAG }}
-      run: |
-        echo "Construyendo imagen segura..."
-        # Construir la imagen y etiquetarla directamente con el URI de ECR
-        docker build --build-arg BUILDKIT_INLINE_CACHE=1 \
-          -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-        # Exponer vars útiles para pasos posteriores
-        echo "IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
-        echo "IMAGE_URI_LATEST=$ECR_REGISTRY/$ECR_REPOSITORY:latest" >> $GITHUB_ENV
+    # ✅ BUILD LOCAL (SIN ECR LOGIN)
+    - name: 🏗️ Build Imagen LOCAL
       working-directory: app-src
+      run: |
+        IMAGE_TAG="${{ env.IMAGE_TAG }}"
+        echo "🏗️ Building local: api-python-app:$IMAGE_TAG"
+        
+        docker build \
+          --build-arg BUILDKIT_INLINE_CACHE=1 \
+          -t api-python-app:$IMAGE_TAG \
+          .
+        
+        echo "✅ Build completado"
+        docker images | grep api-python-app
 
-    - name: Trivy Image Scan (Pre-Push)
+    # ✅ TRIVY SCAN LOCAL
+    - name: 🛡️ Trivy Image Scan (Local)
       uses: aquasecurity/trivy-action@master
       with:
         image-ref: 'api-python-app:${{ env.IMAGE_TAG }}'
@@ -137,30 +138,59 @@ jobs:
         exit-code: '0'
       continue-on-error: true
 
-    - name: Upload Trivy Image Results
+    - name: 📊 Upload Trivy Results
       if: always()
-      uses: github/codeql-action/upload-sarif@v4
+      uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: 'trivy-image-results.sarif'
 
-    - name: Login ECR
+    # ✅ ECR LOGIN (DESPUÉS de build/scan)
+    - name: 🔌 Login ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Push Image Segura a ECR
+    # ✅ TAG PARA ECR
+    - name: 🏷️ Tag Images para ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY_NAME }}
+        IMAGE_TAG: ${{ env.IMAGE_TAG }}
       run: |
-        echo "Push imagen escaneada..."
-        # Push tag con SHA
-        docker push "${IMAGE_URI}"
-        # Crear y push de tag 'latest' apuntando a la misma imagen
-        docker tag "${IMAGE_URI}" "${IMAGE_URI_LATEST}"
-        docker push "${IMAGE_URI_LATEST}"
+        echo "🔌 Registry: $ECR_REGISTRY"
+        echo "📦 Repository: $ECR_REPOSITORY"
+        
+        # Verificar registry NO vacío
+        if [ -z "$ECR_REGISTRY" ]; then
+          echo "❌ ECR_REGISTRY vacío!"
+          exit 1
+        fi
+        
+        # Tags ECR
+        docker tag api-python-app:$IMAGE_TAG \
+          $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        
+        docker tag api-python-app:$IMAGE_TAG \
+          $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        
+        # Export vars
+        echo "IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
+        echo "IMAGE_URI_LATEST=$ECR_REGISTRY/$ECR_REPOSITORY:latest" >> $GITHUB_ENV
+        
+        echo "✅ Tags creados:"
+        docker images | grep $ECR_REPOSITORY
 
-    - name: ECR Image Scan Automático
+    # ✅ PUSH FINAL
+    - name: 📤 Push Images a ECR
       run: |
-        echo "✅ AWS ECR Image Scanning iniciado AUTOMÁTICAMENTE"
-        echo "📊 Resultados en AWS Console > ECR > ${{ vars.ECR_REPOSITORY_NAME }}"
-        echo "⏳ Scan tarda ~2-5 min"
+        echo "🚀 Pushing images..."
+        docker push "${{ env.IMAGE_URI }}"
+        docker push "${{ env.IMAGE_URI_LATEST }}"
+        echo "✅ Images pushed successfully!"
+
+    - name: 🚀 ECR Scan Automático
+      run: |
+        echo "✅ AWS ECR Image Scan iniciado automáticamente"
+        echo "📊 Ver en: AWS Console > ECR > ${{ vars.ECR_REPOSITORY_NAME }}"
       continue-on-error: true
 
   # ────────────── TERRAFORM DEPLOY ──────────────
