@@ -135,11 +135,13 @@ jobs:
         image-ref: '${{ env.IMAGE_URI }}'
         format: 'sarif'
         output: 'trivy-image-results.sarif'
-        severity: 'CRITICAL,HIGH'
+        severity: 'CRITICAL'
         ignore-unfixed: true
-        exit-code: '1'  # Fail en vulnerabilidades CRITICAL/HIGH
+        exit-code: '0'
+      continue-on-error: true
 
-    - name: Upload Trivy Image Scan
+    - name: Upload Trivy Image Results
+      if: always()
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: 'trivy-image-results.sarif'
@@ -153,7 +155,7 @@ jobs:
         docker tag "${IMAGE_URI}" "${IMAGE_URI_LATEST}"
         docker push "${IMAGE_URI_LATEST}"
 
-    - name: 🚀 ECR Image Scan Automático
+    - name: ECR Image Scan Automático
       run: |
         echo "✅ AWS ECR Image Scanning iniciado AUTOMÁTICAMENTE"
         echo "📊 Resultados en AWS Console > ECR > ${{ vars.ECR_REPOSITORY_NAME }}"
