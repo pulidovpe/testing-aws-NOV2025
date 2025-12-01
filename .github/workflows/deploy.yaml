@@ -233,7 +233,7 @@ jobs:
         TF_VAR_desired_count: 1
         TF_VAR_image_tag: ${{ env.IMAGE_TAG }}
       run: |
-        terraform plan -var="desired_count=1" -var="image_tag=${{ env.IMAGE_TAG }}"
+        terraform plan -var="desired_count=1" -var="image_tag=${{ env.IMAGE_TAG }}" -var-file="terraform.tfvars"
         echo "✅ Plan aprobado - Deploying..."
       working-directory: ${{ env.TERRAFORM_WORKING_DIR }}
 
@@ -242,7 +242,7 @@ jobs:
         TF_VAR_desired_count: 1
         TF_VAR_image_tag: ${{ env.IMAGE_TAG }}
       run: |
-        terraform apply -auto-approve -var="desired_count=1" -var="image_tag=${{ env.IMAGE_TAG }}"
+        terraform apply -var="desired_count=1" -var="image_tag=${{ env.IMAGE_TAG }}" -var-file="terraform.tfvars"  ##-auto-approve
         echo "✅ Deploy completado!"
       working-directory: ${{ env.TERRAFORM_WORKING_DIR }}
 
