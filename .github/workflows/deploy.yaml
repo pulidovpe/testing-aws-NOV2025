@@ -7,12 +7,19 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+  issues: write
+
 env:
   TF_VERSION: '1.12.2'
   TERRAFORM_WORKING_DIR: ${{ github.workspace }}/terraform/envs/test
   IMAGE_TAG: ${{ github.sha }}
   TRIVY_JAVA_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-java-db:latest
   TERRAFORM_BACKEND:  ${{ github.workspace }}/terraform/backend/test.hcl
+  TOKEN: ${{ secrets.GH_PAT }}
 
 jobs:
   # ────────────── SECURITY SCANNING ──────────────
@@ -34,7 +41,7 @@ jobs:
     - name: Clonar App Python MySQL
       run: |
         echo "Clonando https://github.com/pulidovpe/api-python-mysql"
-        git clone --depth 1 https://github.com/pulidovpe/api-python-mysql.git app-src
+        git clone --depth 1 https://${{ env.TOKEN }}@github.com/pulidovpe/api-python-mysql.git app-src
         ls -la app-src/
 
     - name: Trivy Code Scan (Repo clonado)
@@ -139,19 +146,19 @@ jobs:
         exit-code: '0'
       continue-on-error: true
 
-    - name: 📊 Upload Trivy Results
+    - name: Upload Trivy Results
       if: always()
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: 'trivy-image-results.sarif'
 
     # ECR LOGIN (DESPUÉS de build/scan)
-    - name: 🔌 Login ECR
+    - name: Login ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
     # TAG PARA ECR
-    - name: 🏷️ Tag Images para ECR
+    - name: Tag Images para ECR
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY_NAME }}
@@ -181,14 +188,14 @@ jobs:
         docker images | grep $ECR_REPOSITORY
 
     # PUSH FINAL
-    - name: 📤 Push Images a ECR
+    - name: Push Images a ECR
       run: |
         echo "🚀 Pushing images..."
         docker push "${{ env.IMAGE_URI }}"
         docker push "${{ env.IMAGE_URI_LATEST }}"
         echo "✅ Images pushed successfully!"
 
-    - name: 🚀 ECR Scan Automático
+    - name: ECR Scan Automático
       run: |
         echo "✅ AWS ECR Image Scan iniciado automáticamente"
         echo "📊 Ver en: AWS Console > ECR > ${{ vars.ECR_REPOSITORY_NAME }}"
