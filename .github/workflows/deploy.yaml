@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  TF_VERSION: '1.7.5'
+  TF_VERSION: '1.12.2'
   TERRAFORM_WORKING_DIR: ${{ github.workspace }}/terraform/envs/test
   IMAGE_TAG: ${{ github.sha }}
   TRIVY_JAVA_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-java-db:latest
