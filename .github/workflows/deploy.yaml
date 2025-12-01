@@ -9,9 +9,10 @@ on:
 
 env:
   TF_VERSION: '1.7.5'
-  TERRAFORM_WORKING_DIR: terraform
+  TERRAFORM_WORKING_DIR: ${{ github.workspace }}/terraform/envs/test
   IMAGE_TAG: ${{ github.sha }}
   TRIVY_JAVA_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-java-db:latest
+  TERRAFORM_BACKEND:  ${{ github.workspace }}/terraform/backend/test.hcl
 
 jobs:
   # ────────────── SECURITY SCANNING ──────────────
@@ -109,8 +110,8 @@ jobs:
       with:
         role-to-assume: ${{ secrets.AWS_ROLE }}
         aws-region: ${{ vars.AWS_REGION }}
-        role-session-name: GitHubActions-Build-${{ github.run_id }}
-
+        role-session-name: GitHub-OIDC-TERRAFORM
+        
     # ✅ BUILD LOCAL (SIN ECR LOGIN)
     - name: 🏗️ Build Imagen LOCAL
       working-directory: app-src
@@ -213,7 +214,7 @@ jobs:
       with:
         role-to-assume: ${{ secrets.AWS_ROLE }}
         aws-region: ${{ vars.AWS_REGION }}
-        role-session-name: GitHubActions-Deploy-${{ github.run_id }}
+        role-session-name: GitHub-OIDC-TERRAFORM
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
@@ -221,29 +222,29 @@ jobs:
         terraform_version: ${{ env.TF_VERSION }}
 
     - name: Terraform Init & Validate
-      working-directory: ${{ env.TERRAFORM_WORKING_DIR }}
       run: |
-        terraform init -upgrade
+        terraform init -reconfigure -backend-config=${{ env.TERRAFORM_BACKEND }}
         terraform validate
         echo "✅ Terraform validado"
-
-    - name: Terraform Plan
       working-directory: ${{ env.TERRAFORM_WORKING_DIR }}
+
+    - name: Terraform Plan      
       env:
         TF_VAR_desired_count: 1
         TF_VAR_image_tag: ${{ env.IMAGE_TAG }}
       run: |
         terraform plan -var="desired_count=1" -var="image_tag=${{ env.IMAGE_TAG }}"
         echo "✅ Plan aprobado - Deploying..."
-
-    - name: Terraform Apply
       working-directory: ${{ env.TERRAFORM_WORKING_DIR }}
+
+    - name: Terraform Apply      
       env:
         TF_VAR_desired_count: 1
         TF_VAR_image_tag: ${{ env.IMAGE_TAG }}
       run: |
         terraform apply -auto-approve -var="desired_count=1" -var="image_tag=${{ env.IMAGE_TAG }}"
         echo "✅ Deploy completado!"
+      working-directory: ${{ env.TERRAFORM_WORKING_DIR }}
 
     # ────────────── SUMMARY & TESTS ──────────────
     - name: Secure Deployment Summary
