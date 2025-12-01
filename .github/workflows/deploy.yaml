@@ -112,7 +112,7 @@ jobs:
         aws-region: ${{ vars.AWS_REGION }}
         role-session-name: GitHub-OIDC-TERRAFORM
         
-    # ✅ BUILD LOCAL (SIN ECR LOGIN)
+    # BUILD LOCAL (SIN ECR LOGIN)
     - name: 🏗️ Build Imagen LOCAL
       working-directory: app-src
       run: |
@@ -127,7 +127,7 @@ jobs:
         echo "✅ Build completado"
         docker images | grep api-python-app
 
-    # ✅ TRIVY SCAN LOCAL
+    # TRIVY SCAN LOCAL
     - name: 🛡️ Trivy Image Scan (Local)
       uses: aquasecurity/trivy-action@master
       with:
@@ -145,12 +145,12 @@ jobs:
       with:
         sarif_file: 'trivy-image-results.sarif'
 
-    # ✅ ECR LOGIN (DESPUÉS de build/scan)
+    # ECR LOGIN (DESPUÉS de build/scan)
     - name: 🔌 Login ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
-    # ✅ TAG PARA ECR
+    # TAG PARA ECR
     - name: 🏷️ Tag Images para ECR
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -180,7 +180,7 @@ jobs:
         echo "✅ Tags creados:"
         docker images | grep $ECR_REPOSITORY
 
-    # ✅ PUSH FINAL
+    # PUSH FINAL
     - name: 📤 Push Images a ECR
       run: |
         echo "🚀 Pushing images..."
@@ -222,9 +222,10 @@ jobs:
         terraform_version: ${{ env.TF_VERSION }}
 
     - name: Terraform Init & Validate
+      id: validate
       run: |
         terraform init -reconfigure -backend-config=${{ env.TERRAFORM_BACKEND }}
-        terraform validate
+        terraform validate -no-color
         echo "✅ Terraform validado"
       working-directory: ${{ env.TERRAFORM_WORKING_DIR }}
 
@@ -233,16 +234,62 @@ jobs:
         TF_VAR_desired_count: 1
         TF_VAR_image_tag: ${{ env.IMAGE_TAG }}
       run: |
-        terraform plan -var="desired_count=1" -var="image_tag=${{ env.IMAGE_TAG }}" -var-file="terraform.tfvars"
+        terraform plan -var="desired_count=1" -var="image_tag=${{ env.IMAGE_TAG }}" -var-file="terraform.tfvars" -out=tfplan -no-color
         echo "✅ Plan aprobado - Deploying..."
       working-directory: ${{ env.TERRAFORM_WORKING_DIR }}
+      continue-on-error: true
+      
+    # ────────────── APPROVAL ──────────────
+    - name: Approval-Action
+      id: approval
+      uses: ekeel/approval-action@v1.0.3
+      with:
+        token: ${{ secrets.GH_PAT }}
+        approvers: 'pulidovpe'
+        minimumApprovals: '1'
+        issueLabels: 'ManualApproval,ApprovalAction'
+        excludeInitiator: 'false'
+        approveWords: 'approved, aprobado'
+        rejectWords: 'denied, rechazado'
+        waitInterval: '1'
+        waitTimeout: '3'
+        issueTitle: 'Deployment request approval'
+        issueBody: |
+          #### Terraform Initialization and Validation 🤖\`${{ steps.validate.outcome }}\`
+
+          <details><summary>Validation Output</summary>
+
+          \`\`\`
+          ${{ steps.validate.outputs.stdout }}
+          \`\`\`
+
+          </details>
+
+          #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+
+          <details><summary>Show Plan</summary>
+
+          \`\`\`
+          ${{ steps.plan.outputs.stdout }}
+          \`\`\`
+
+          </details>
+
+          *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: output
+          })
 
     - name: Terraform Apply      
       env:
         TF_VAR_desired_count: 1
         TF_VAR_image_tag: ${{ env.IMAGE_TAG }}
       run: |
-        terraform apply -var="desired_count=1" -var="image_tag=${{ env.IMAGE_TAG }}" -var-file="terraform.tfvars"  ##-auto-approve
+        terraform apply -var="desired_count=1" -var="image_tag=${{ env.IMAGE_TAG }}" -var-file="terraform.tfvars" -auto-approve tfplan
         echo "✅ Deploy completado!"
       working-directory: ${{ env.TERRAFORM_WORKING_DIR }}
 
