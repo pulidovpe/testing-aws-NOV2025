@@ -7,6 +7,12 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  id-token: write # This is required for aws oidc connection
+  contents: read # This is required for actions/checkout
+  pull-requests: write # This is required for gh bot to comment PR
+  issues: write
+  
 env:
   TF_VERSION: '1.12.2'
   TERRAFORM_WORKING_DIR: ${{ github.workspace }}/terraform/envs/test
@@ -58,7 +64,7 @@ jobs:
       with:
         sarif_file: 'trivy-code-results.sarif'
 
-    # CHECKOV (con baseline)
+    # ────────────── CHECKOV (con baseline) ──────────────
     - name: Checkov IaC Scan
       uses: bridgecrewio/checkov-action@v12
       with:
@@ -76,7 +82,7 @@ jobs:
       with:
         sarif_file: 'checkov-results.sarif'
 
-    # SECRETS SCAN
+    # ────────────── SECRETS SCAN ──────────────
     - name: Secret Scan
       uses: trufflesecurity/trufflehog@main
       with:
@@ -99,7 +105,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: 🔄 Clonar App Python MySQL
+    - name: Clonar App Python MySQL
       run: |
         echo "📦 Clonando app-src..."
         git clone --depth 1 https://github.com/pulidovpe/api-python-mysql.git app-src
@@ -113,8 +119,8 @@ jobs:
         aws-region: ${{ vars.AWS_REGION }}
         role-session-name: GitHub-OIDC-TERRAFORM
         
-    # BUILD LOCAL (SIN ECR LOGIN)
-    - name: 🏗️ Build Imagen LOCAL
+    # ────────────── BUILD LOCAL ──────────────
+    - name: Build Imagen LOCAL
       working-directory: app-src
       run: |
         IMAGE_TAG="${{ env.IMAGE_TAG }}"
@@ -128,8 +134,8 @@ jobs:
         echo "✅ Build completado"
         docker images | grep api-python-app
 
-    # TRIVY SCAN LOCAL
-    - name: 🛡️ Trivy Image Scan (Local)
+    # ────────────── TRIVY SCAN LOCAL ──────────────
+    - name: Trivy Image Scan (Local)
       uses: aquasecurity/trivy-action@master
       with:
         image-ref: 'api-python-app:${{ env.IMAGE_TAG }}'
@@ -146,12 +152,12 @@ jobs:
       with:
         sarif_file: 'trivy-image-results.sarif'
 
-    # ECR LOGIN (DESPUÉS de build/scan)
+    # ────────────── ECR LOGIN ──────────────
     - name: Login ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
-    # TAG PARA ECR
+    # ────────────── TAG PARA ECR ──────────────
     - name: Tag Images para ECR
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -181,7 +187,7 @@ jobs:
         echo "✅ Tags creados:"
         docker images | grep $ECR_REPOSITORY
 
-    # PUSH FINAL
+    # ────────────── PUSH FINAL ──────────────
     - name: Push Images a ECR
       run: |
         echo "🚀 Pushing images..."
@@ -195,17 +201,14 @@ jobs:
         echo "📊 Ver en: AWS Console > ECR > ${{ vars.ECR_REPOSITORY_NAME }}"
       continue-on-error: true
 
-  # ────────────── TERRAFORM DEPLOY ──────────────
-  deploy:
-    environment: prod
+  # ────────────── TERRAFORM PLAN ──────────────
+  tf-plan:
+    environment: dev
+    name: Terraform Plan
     runs-on: ubuntu-latest
-    needs: [security-scan, build-and-scan]  # Solo si TODO pasa
-    if: github.ref == 'refs/heads/main'  # Sin deploy en PRs
-    permissions:
-      id-token: write
-      contents: read
-      pull-requests: write
-      issues: write
+    needs: build-and-scan
+    outputs:
+      approved: ${{ steps.approval.outputs.approved }}
 
     steps:
     # ────────────── TERRAFORM ──────────────
@@ -232,7 +235,8 @@ jobs:
         echo "✅ Terraform validado"
       working-directory: ${{ env.TERRAFORM_WORKING_DIR }}
 
-    - name: Terraform Plan      
+    - name: Terraform Plan
+      id: plan
       env:
         TF_VAR_desired_count: 1
         TF_VAR_image_tag: ${{ env.IMAGE_TAG }}
@@ -287,6 +291,14 @@ jobs:
             body: output
           })
 
+  tf-apply:
+    environment: dev
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    needs: tf-plan
+    if: needs.tf-plan.outputs.approved == 'true'
+
+    steps:
     - name: Terraform Apply      
       env:
         TF_VAR_desired_count: 1
