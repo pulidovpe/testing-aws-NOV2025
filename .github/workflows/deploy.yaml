@@ -2,9 +2,12 @@ name: Secure Deploy ECS Fargate (HTTPS por IP)
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    branches:
+      - main
+    paths:
+      - 'terraform/**'
+  #pull_request:
+  #  branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -108,9 +111,8 @@ jobs:
     - name: Clonar App Python MySQL
       run: |
         echo "📦 Clonando app-src..."
-        git clone --depth 1 https://github.com/pulidovpe/api-python-mysql.git app-src
+        git clone --depth 1 https://${{ env.TOKEN }}@github.com/pulidovpe/api-python-mysql.git app-src
         ls -la app-src/
-        cd app-src && ls -la
 
     - name: 🔐 Configurar AWS OIDC
       uses: aws-actions/configure-aws-credentials@v4
